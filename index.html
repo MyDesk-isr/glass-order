@@ -84,9 +84,9 @@
         <select class="form" id="glassType"></select>
       </div>
       <div class="full">
-        <label class="fld" for="apiKey">מפתח ניתוח AI (מוזן פעם אחת, נשמר רק בדפדפן שלך)</label>
-        <input class="form" id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" style="direction:ltr">
-        <div class="hint">בלי מפתח: הזנה ידנית והדבקת שורות עובדות כרגיל. התמונות לא נשמרות בשום מקום — מנותחות בזיכרון בלבד.</div>
+        <label class="fld" for="apiKey">מפתח Google Gemini API (חינם, מוזן פעם אחת ונשמר בדפדפן שלך)</label>
+        <input class="form" id="apiKey" type="password" placeholder="AIzaSy..." autocomplete="off" style="direction:ltr">
+        <div class="hint">מפתח חינמי להוצאה תוך דקה ב-aistudio.google.com | בלי מפתח: הזנה ידנית והדבקת שורות עובדות כרגיל.</div>
       </div>
     </div>
   </section>
@@ -161,10 +161,10 @@ GLASS_TYPES.forEach((g, i) => {
 });
 
 try {
-  const saved = localStorage.getItem('glassOrderApiKey');
+  const saved = localStorage.getItem('glassOrderGeminiApiKey') || localStorage.getItem('glassOrderApiKey');
   if (saved) $('apiKey').value = saved;
   $('apiKey').addEventListener('change', () => {
-    try { localStorage.setItem('glassOrderApiKey', $('apiKey').value.trim()); } catch (e) {}
+    try { localStorage.setItem('glassOrderGeminiApiKey', $('apiKey').value.trim()); } catch (e) {}
   });
 } catch (e) {}
 
@@ -210,41 +210,45 @@ const PROMPT =
   'המידות עשויות להיות בס"מ (112.5) או במ"מ (1125) — החזר תמיד בס"מ. ' +
   'סימון x2/x3 = כמות לוחות זהים; שורה אחת עם qty ותווית טווח (G4-G6). ' +
   'גבהים שונים באותה קבוצה = שורה נפרדת לכל גובה. ' +
-  'החזר אך ורק JSON תקין בלי markdown: ' +
+  'החזר אך ורק JSON תקין במבנה הבא: ' +
   '{"items":[{"facade":"3","label":"G7","qty":1,"width_cm":112.5,"height_cm":251.5}]} ' +
   'מידה לא ברורה = null.';
 
 async function analyze(file, onStatus) {
   const image = await compress(file);
-  if (onStatus) onStatus('שולח לניתוח…');
+  if (onStatus) onStatus('שולח לניתוח ב-Google Gemini…');
   const key = ($('apiKey').value || '').trim();
-  if (!key) throw new Error('לניתוח אוטומטי יש להזין מפתח AI בפרטי ההזמנה');
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
+  if (!key) throw new Error('לניתוח אוטומטי יש להזין מפתח Google Gemini API בפרטי ההזמנה');
+  
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+  
+  const r = await fetch(url, {
     method: 'POST',
     headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
-      'content-type': 'application/json',
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
-          { type: 'text', text: PROMPT },
-        ],
+      contents: [{
+        parts: [
+          { inline_data: { mime_type: 'image/jpeg', data: image } },
+          { text: PROMPT }
+        ]
       }],
+      generationConfig: {
+        responseMimeType: 'application/json'
+      }
     }),
   });
+  
   if (!r.ok) {
-    if (r.status === 401) throw new Error('המפתח לא תקין — בדוק את שדה המפתח');
+    if (r.status === 400 || r.status === 403) throw new Error('המפתח לא תקין — בדוק את מפתח Gemini API');
     throw new Error('שגיאה משירות הניתוח (' + r.status + ')');
   }
+  
   const out = await r.json();
-  const text = (out.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const text = out.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error('לא התקבלה תשובה משירות הניתוח');
+  
   const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
   if (!parsed || !Array.isArray(parsed.items)) throw new Error('המבנה שהוחזר אינו תקין');
   return parsed.items;
