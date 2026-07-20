@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>הזמנת זכוכיות — כלי שטח</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root { --ink:#1d4fd7; --graphite:#23272e; --paper:#fafaf7; --line:#d8d8d0; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:var(--paper);
+    font-family:'Heebo','Segoe UI',system-ui,sans-serif; color:var(--graphite); padding-bottom:96px; }
+  header { padding:20px 20px 18px; border-bottom:1.5px solid var(--graphite); }
+  .eyebrow { font-size:13px; letter-spacing:2px; color:var(--ink); font-weight:500; }
+  h1 { margin:4px 0 0; font-size:30px; font-weight:900; }
+  main { padding:20px 16px; max-width:760px; margin:0 auto; }
+  .card { background:#fff; border:1.5px solid var(--graphite); border-radius:10px; padding:16px; margin-bottom:18px; }
+  .card-title { font-size:14px; font-weight:900; margin-bottom:12px; color:var(--ink); }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .grid .full { grid-column:1 / -1; }
+  label.fld { font-size:13px; font-weight:700; color:#5b6068; margin-bottom:4px; display:block; }
+  input.form, select.form { width:100%; border:1.5px solid var(--line); border-radius:8px;
+    background:#fff; padding:10px 12px; font-size:15px; font-family:inherit; outline:none; }
+  input.form:focus, select.form:focus, textarea:focus { border-color:var(--ink); }
+  .hint { font-size:12px; color:#8a8f96; margin-top:4px; }
+  .drop { display:block; border:2px dashed var(--ink); border-radius:10px; padding:24px 16px;
+    text-align:center; cursor:pointer; background:#fff; }
+  .drop.busy { border-color:var(--line); cursor:wait; }
+  .drop .t1 { font-weight:700; font-size:17px; margin-top:8px; }
+  .drop .t2 { font-size:13px; color:#6b6f76; margin-top:4px; }
+  .row-btns { display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap; }
+  button { font-family:inherit; cursor:pointer; }
+  .btn-sm { padding:8px 14px; border:1.5px solid var(--ink); border-radius:8px;
+    background:#fff; font-size:13px; font-weight:700; color:var(--ink); }
+  .btn-sm.on { background:var(--ink); color:#fff; }
+  .alert { margin-top:12px; padding:10px 14px; background:#fdf0ef; border:1px solid #e8b4ae;
+    border-radius:8px; font-size:14px; color:#8a2f25; }
+  .paste-box { margin-top:12px; background:#fff; border:1.5px solid var(--ink); border-radius:10px; padding:14px; }
+  .paste-box textarea { width:100%; border:1.5px solid var(--line); border-radius:8px; padding:10px;
+    font-size:14px; font-family:monospace; outline:none; resize:vertical; direction:ltr; }
+  .tbl-wrap { margin-top:24px; overflow-x:auto; }
+  table { width:100%; min-width:560px; border-collapse:collapse; background:#fff; border:1.5px solid var(--graphite); }
+  thead tr { background:var(--graphite); color:#fff; }
+  th { padding:10px 4px; font-size:12.5px; }
+  tbody tr { border-top:1px solid var(--line); }
+  td { padding:3px 4px; text-align:center; }
+  td input { width:100%; border:none; border-bottom:1.5px solid var(--line); background:transparent;
+    padding:6px 2px; font-size:15px; font-family:inherit; text-align:center; outline:none; }
+  td input:focus { border-bottom-color:var(--ink); }
+  td input.dim { color:var(--ink); font-weight:700; }
+  td .sqm { font-weight:700; font-size:14px; }
+  td .del { border:none; background:transparent; font-size:15px; color:#9aa0a6; }
+  tfoot tr { border-top:1.5px solid var(--graphite); background:#f2f6ff; }
+  tfoot td { padding:12px 8px; font-weight:900; }
+  .total-sqm { font-size:16px; color:var(--ink); }
+  .actions { display:flex; gap:10px; margin-top:14px; }
+  .btn-add { flex:1; padding:12px 0; border:1.5px solid var(--graphite); border-radius:8px;
+    background:#fff; font-size:15px; font-weight:700; }
+  .btn-export { flex:2; padding:12px 0; border:none; border-radius:8px; background:var(--ink);
+    color:#fff; font-size:16px; font-weight:900; }
+  .empty { text-align:center; color:#8a8f96; font-size:14px; margin-top:26px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="eyebrow">כלי שטח · זיגוג</div>
+  <h1>הזמנת זכוכיות</h1>
+</header>
+
+<main>
+  <section class="card">
+    <div class="card-title">פרטי ההזמנה</div>
+    <div class="grid">
+      <div class="full">
+        <label class="fld" for="project">שם הפרויקט</label>
+        <input class="form" id="project" placeholder="למשל: רייכמן">
+      </div>
+      <div>
+        <label class="fld" for="orderDate">תאריך</label>
+        <input class="form" id="orderDate">
+      </div>
+      <div>
+        <label class="fld" for="glassType">סוג הזכוכית</label>
+        <select class="form" id="glassType"></select>
+      </div>
+      <div class="full">
+        <label class="fld" for="apiKey">מפתח ניתוח AI (מוזן פעם אחת, נשמר רק בדפדפן שלך)</label>
+        <input class="form" id="apiKey" type="password" placeholder="sk-ant-..." autocomplete="off" style="direction:ltr">
+        <div class="hint">בלי מפתח: הזנה ידנית והדבקת שורות עובדות כרגיל. התמונות לא נשמרות בשום מקום — מנותחות בזיכרון בלבד.</div>
+      </div>
+    </div>
+  </section>
+
+  <label class="drop" id="dropZone">
+    <input type="file" id="fileInput" accept="image/*" multiple style="display:none">
+    <div style="font-size:32px">📐</div>
+    <div class="t1" id="dropTitle">צלם או העלה תוכנית עם מידות בכתב יד</div>
+    <div class="t2">אפשר כמה תמונות בבת אחת · המידות מומרות למטרים אוטומטית</div>
+  </label>
+
+  <div class="row-btns">
+    <button class="btn-sm" id="pasteToggle">📋 הדבק שורות</button>
+  </div>
+
+  <div class="paste-box" id="pasteBox" style="display:none">
+    <div style="font-size:13px;font-weight:700;margin-bottom:6px">
+      הדבק שורות — אחת בכל שורה, בפורמט: חזית,חלון,כמות,גובה,רוחב
+    </div>
+    <div class="hint" style="margin-bottom:8px">לדוגמה: 3,G7,1,2.515,1.125</div>
+    <textarea id="pasteText" rows="6" placeholder="3,G7,1,2.515,1.125&#10;3,G8,1,2.52,1.125"></textarea>
+    <button class="btn-sm on" id="pasteApply" style="margin-top:8px">הוסף לטבלה</button>
+  </div>
+
+  <div class="alert" id="errorBox" style="display:none" role="alert"></div>
+
+  <div class="tbl-wrap" id="tableWrap" style="display:none">
+    <table>
+      <thead><tr>
+        <th>חזית</th><th>חלון</th><th>כמות</th><th>גובה (מ')</th><th>רוחב (מ')</th><th>מ"ר</th><th></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+      <tfoot><tr>
+        <td colspan="2" style="text-align:right">סה"כ</td>
+        <td id="totQty"></td>
+        <td colspan="2" style="font-size:13px;color:#5b6068;font-weight:400">זכוכיות / מ"ר ←</td>
+        <td class="total-sqm" id="totSqm"></td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+    <div class="actions">
+      <button class="btn-add" id="addRow">+ הוסף שורה</button>
+      <button class="btn-export" id="exportBtn">⬇ הורד טופס הזמנה (אקסל)</button>
+    </div>
+  </div>
+
+  <div class="empty" id="emptyMsg">
+    <p style="margin:0">עדיין אין שורות בהזמנה.</p>
+    <button class="btn-add" id="addFirst" style="margin-top:12px;padding:10px 20px">+ התחל בהזנה ידנית</button>
+  </div>
+</main>
+
+<script>
+const GLASS_TYPES = [
+  "טריפלקס 5+5 PVB 0.38",
+  "טריפלקס 5+5 PVB 0.76",
+  "טריפלקס 6+6 PVB 0.38",
+  "טריפלקס 6+6 PVB 0.76",
+  "טריפלקס 6+6 PVB 1.52",
+  'זכוכית מחוסמת 10 מ"מ',
+];
+const $ = (id) => document.getElementById(id);
+let rows = [];
+
+const d = new Date();
+$('orderDate').value = d.getDate() + '.' + (d.getMonth() + 1) + '.' + String(d.getFullYear()).slice(2);
+GLASS_TYPES.forEach((g, i) => {
+  const o = document.createElement('option');
+  o.value = g; o.textContent = g;
+  if (i === 2) o.selected = true;
+  $('glassType').appendChild(o);
+});
+
+try {
+  const saved = localStorage.getItem('glassOrderApiKey');
+  if (saved) $('apiKey').value = saved;
+  $('apiKey').addEventListener('change', () => {
+    try { localStorage.setItem('glassOrderApiKey', $('apiKey').value.trim()); } catch (e) {}
+  });
+} catch (e) {}
+
+function readAsDataURL(file) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(new Error('קריאת הקובץ נכשלה'));
+    r.readAsDataURL(file);
+  });
+}
+
+async function compress(file) {
+  const dataUrl = await readAsDataURL(file);
+  const img = await new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error('הדפדפן לא הצליח לפענח את התמונה'));
+    im.src = dataUrl;
+  });
+  const MAX = 1400;
+  let w = img.width, h = img.height;
+  const s = Math.min(1, MAX / Math.max(w, h));
+  w = Math.round(w * s); h = Math.round(h * s);
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+  let q = 0.82, b64 = c.toDataURL('image/jpeg', q).split(',')[1];
+  while (b64.length > 600000 && q > 0.4) {
+    q -= 0.1;
+    b64 = c.toDataURL('image/jpeg', q).split(',')[1];
+  }
+  return b64;
+}
+
+const PROMPT =
+  'זהו צילום של תוכניות חזיתות (שרטוטי זיגוג) עם מידות בכתב יד. ' +
+  'לכל חזית יש מספר (ליד קנה המידה, למשל "3" ליד 1:50) וחלונות מסומנים G (למשל G7). ' +
+  'ייתכן סימון גובה כללי כמו h-2935 (במ"מ). ' +
+  'חלץ את כל המידות בכתב היד: רוחב וגובה של כל לוח זכוכית, לכל החזיתות שבצילום. ' +
+  'המידות עשויות להיות בס"מ (112.5) או במ"מ (1125) — החזר תמיד בס"מ. ' +
+  'סימון x2/x3 = כמות לוחות זהים; שורה אחת עם qty ותווית טווח (G4-G6). ' +
+  'גבהים שונים באותה קבוצה = שורה נפרדת לכל גובה. ' +
+  'החזר אך ורק JSON תקין בלי markdown: ' +
+  '{"items":[{"facade":"3","label":"G7","qty":1,"width_cm":112.5,"height_cm":251.5}]} ' +
+  'מידה לא ברורה = null.';
+
+async function analyze(file, onStatus) {
+  const image = await compress(file);
+  if (onStatus) onStatus('שולח לניתוח…');
+  const key = ($('apiKey').value || '').trim();
+  if (!key) throw new Error('לניתוח אוטומטי יש להזין מפתח AI בפרטי ההזמנה');
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+          { type: 'text', text: PROMPT },
+        ],
+      }],
+    }),
+  });
+  if (!r.ok) {
+    if (r.status === 401) throw new Error('המפתח לא תקין — בדוק את שדה המפתח');
+    throw new Error('שגיאה משירות הניתוח (' + r.status + ')');
+  }
+  const out = await r.json();
+  const text = (out.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
+  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+  if (!parsed || !Array.isArray(parsed.items)) throw new Error('המבנה שהוחזר אינו תקין');
+  return parsed.items;
+}
+
+function sqm(r) {
+  const q = parseFloat(r.qty), h = parseFloat(r.height), w = parseFloat(r.width);
+  return isFinite(q) && isFinite(h) && isFinite(w) ? q * h * w : null;
+}
+
+function updateTotals() {
+  const tq = rows.reduce((s, r) => s + (parseFloat(r.qty) || 0), 0);
+  const ts = rows.reduce((s, r) => s + (sqm(r) || 0), 0);
+  $('totQty').textContent = tq || '';
+  $('totSqm').textContent = ts.toFixed(2);
+}
+
+function updateSqmCell(tr, row) {
+  const v = sqm(row);
+  tr.querySelector('.sqm').textContent = v != null ? v.toFixed(2) : '—';
+}
+
+function render() {
+  const tb = $('tbody');
+  tb.innerHTML = '';
+  rows.forEach((row) => {
+    const tr = document.createElement('tr');
+    [['facade','',false],['label','',false],['qty','numeric',false],
+     ['height','decimal',true],['width','decimal',true]].forEach(([f, mode, dim]) => {
+      const td = document.createElement('td');
+      const inp = document.createElement('input');
+      inp.value = row[f] || '';
+      if (mode) inp.inputMode = mode;
+      if (dim) inp.className = 'dim';
+      inp.addEventListener('input', () => { row[f] = inp.value; updateTotals(); updateSqmCell(tr, row); });
+      td.appendChild(inp);
+      tr.appendChild(td);
+    });
+    const tdS = document.createElement('td');
+    tdS.innerHTML = '<span class="sqm"></span>';
+    tr.appendChild(tdS);
+    const tdD = document.createElement('td');
+    const del = document.createElement('button');
+    del.className = 'del'; del.textContent = '✕';
+    del.addEventListener('click', () => { rows = rows.filter((x) => x !== row); render(); });
+    tdD.appendChild(del);
+    tr.appendChild(tdD);
+    tb.appendChild(tr);
+    updateSqmCell(tr, row);
+  });
+  $('tableWrap').style.display = rows.length ? '' : 'none';
+  $('emptyMsg').style.display = rows.length ? 'none' : '';
+  updateTotals();
+}
+
+function addRows(items) {
+  items.forEach((it) => rows.push({
+    facade: it.facade != null ? String(it.facade) : '',
+    label: it.label || '',
+    qty: it.qty != null ? String(it.qty) : '1',
+    height: it.height_cm != null ? (it.height_cm / 100).toFixed(3) : (it.height || ''),
+    width: it.width_cm != null ? (it.width_cm / 100).toFixed(3) : (it.width || ''),
+  }));
+  render();
+}
+
+$('fileInput').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  $('dropZone').classList.add('busy');
+  $('errorBox').style.display = 'none';
+  for (let i = 0; i < files.length; i++) {
+    $('dropTitle').textContent = 'מנתח תמונה ' + (i + 1) + ' מתוך ' + files.length + '…';
+    try {
+      const items = await analyze(files[i], (m) => { $('dropTitle').textContent = m; });
+      addRows(items);
+    } catch (err) {
+      $('errorBox').textContent = 'תמונה ' + (i + 1) + ': ' + err.message;
+      $('errorBox').style.display = '';
+    }
+  }
+  $('dropZone').classList.remove('busy');
+  $('dropTitle').textContent = 'צלם או העלה תוכנית עם מידות בכתב יד';
+  $('fileInput').value = '';
+});
+
+$('pasteToggle').addEventListener('click', () => {
+  const show = $('pasteBox').style.display === 'none';
+  $('pasteBox').style.display = show ? '' : 'none';
+  $('pasteToggle').classList.toggle('on', show);
+});
+
+$('pasteApply').addEventListener('click', () => {
+  const added = [];
+  $('pasteText').value.split(/\r?\n/).forEach((line) => {
+    const p = line.split(/[,\t;]/).map((x) => x.trim());
+    if (p.length >= 5) added.push({ facade: p[0], label: p[1], qty: p[2] || '1', height: p[3], width: p[4] });
+  });
+  if (added.length) {
+    addRows(added);
+    $('pasteText').value = '';
+    $('pasteBox').style.display = 'none';
+    $('pasteToggle').classList.remove('on');
+    $('errorBox').style.display = 'none';
+  } else {
+    $('errorBox').textContent = 'לא זוהו שורות תקינות. הפורמט: חזית,חלון,כמות,גובה,רוחב';
+    $('errorBox').style.display = '';
+  }
+});
+
+$('addRow').addEventListener('click', () => addRows([{}]));
+$('addFirst').addEventListener('click', () => addRows([{}]));
+
+$('exportBtn').addEventListener('click', () => {
+  const project = $('project').value.trim();
+  const glass = $('glassType').value;
+  const sorted = [...rows].sort((a, b) => (parseFloat(a.facade) || 999) - (parseFloat(b.facade) || 999));
+  const aoa = [
+    [],
+    ['תאריך:', $('orderDate').value.trim()],
+    [],
+    ['לכבוד: '],
+    ['לידי:  ', '', '', '', '', '', '', 'דף  1  מתוך 1'],
+    [],
+    ['פרויקט ' + (project || '________') + '  -הזמנת זכוכיות'],
+    [],
+    ['אבקש להזמין זכוכיות שקופה ' + glass + '  לפי רשימה, עם ליטוש סרט ברוחב וליטוש יהלום בגובה.  נא לסמן מספר חלון ומס חזית על כל זכוכית.'],
+    ['חזית', 'מס.חלון', '', 'מידות זכוכית'],
+    ['', '', 'כמות', 'גובה (מ)', 'רוחב (מ)', 'מ"ר', 'מחיר ', 'סה"כ'],
+  ];
+  let tq = 0, ts = 0;
+  sorted.forEach((r) => {
+    const v = sqm(r);
+    tq += parseFloat(r.qty) || 0;
+    ts += v || 0;
+    aoa.push([
+      parseFloat(r.facade) || r.facade, r.label, parseFloat(r.qty) || r.qty,
+      parseFloat(r.height) || r.height, parseFloat(r.width) || r.width,
+      v != null ? Number(v.toFixed(3)) : '', '', '',
+    ]);
+  });
+  aoa.push(['', 'סה"כ', tq, '', '', Number(ts.toFixed(3)), '', '']);
+  aoa.push([]);
+  aoa.push(['נא לצרף באספקה תעודת משלוח(לא חשבונית)']);
+  aoa.push([' המחיר לפני מע"מ ']);
+  aoa.push(['לרשום מספרים על זכוכיות']);
+  aoa.push(['תודה מראש']);
+  aoa.push([]);
+  aoa.push(['הערות:']);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:7},{wch:11},{wch:7},{wch:10},{wch:10},{wch:9},{wch:8},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XLSX.utils.book_append_sheet(wb, ws, 'הזמנה');
+  XLSX.writeFile(wb, 'הזמנת_זכוכיות' + (project ? '_' + project.replace(/\s+/g, '_') : '') + '.xlsx');
+});
+
+render();
+</script>
+</body>
+</html>
