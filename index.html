@@ -150,6 +150,7 @@ const GLASS_TYPES = [
   'זכוכית מחוסמת 10 מ"מ',
 ];
 const $ = (id) => document.getElementById(id);
+const sleep = (ms) => new Promise(res => setTimeout(res, ms));
 let rows = [];
 
 const d = new Date();
@@ -215,12 +216,10 @@ const PROMPT =
   '{"items":[{"facade":"3","label":"G7","qty":1,"width_cm":112.5,"height_cm":251.5}]} ' +
   'מידה לא ברורה = null.';
 
-// ניסיון קריאה מדורג דרך מספר מסלולים מול גוגל
 const ATTEMPTS = [
-  { model: 'gemini-1.5-flash', ver: 'v1' },
-  { model: 'gemini-1.5-flash', ver: 'v1beta' },
   { model: 'gemini-2.0-flash', ver: 'v1beta' },
-  { model: 'gemini-1.5-pro', ver: 'v1' }
+  { model: 'gemini-1.5-flash', ver: 'v1' },
+  { model: 'gemini-1.5-flash', ver: 'v1beta' }
 ];
 
 async function analyze(file, onStatus) {
@@ -230,7 +229,10 @@ async function analyze(file, onStatus) {
 
   let lastApiError = '';
 
-  for (const att of ATTEMPTS) {
+  for (let i = 0; i < ATTEMPTS.length; i++) {
+    const att = ATTEMPTS[i];
+    if (i > 0) await sleep(1200); // השהייה של 1.2 שניות בין ניסיונות למניעת עומס
+
     if (onStatus) onStatus(`מנתח תמונה בעזרת ${att.model}…`);
     const url = `https://generativelanguage.googleapis.com/${att.ver}/models/${att.model}:generateContent?key=${encodeURIComponent(key)}`;
     
@@ -263,33 +265,25 @@ async function analyze(file, onStatus) {
         return parsed.items;
       }
 
-      // חילוץ תשובת השגיאה המפרטת של גוגל
+      if (r.status === 429) {
+        throw new Error('הגעת למגבלת הבקשות החינמית בדקה. נא להמתין כ-30 שניות ולנסות שוב.');
+      }
+
       const details = out.error?.message || `קוד ${r.status}`;
       lastApiError = details;
 
-      if (r.status === 404) {
-        // המודל אינו זמין בנתיב זה עבור המפתח, נמשיך לניסיון הבא
-        continue;
-      }
-
-      if (r.status === 400 || r.status === 403) {
-        throw new Error(`שגיאת הרשאה מול גוגל (${r.status}): ${details}`);
-      }
-      if (r.status === 429) {
-        throw new Error('חרגת ממכסת הבקשות (429), נסה שוב עוד כדקה.');
-      }
+      if (r.status === 404) continue;
+      if (r.status === 400 || r.status === 403) throw new Error(`שגיאת הרשאה (${r.status}): ${details}`);
 
       throw new Error(`שגיאה משירות הניתוח: ${details}`);
 
     } catch (err) {
-      if (err.message.includes('404') || err.message.includes('not found')) {
-        continue;
-      }
+      if (err.message.includes('404') || err.message.includes('not found')) continue;
       throw err;
     }
   }
 
-  throw new Error(`שגיאת 404 משרתי גוגל. תשובת השרת: "${lastApiError}". נא לוודא שהמפתח הונפק מ-aistudio.google.com בחשבון פרטי.`);
+  throw new Error(`לא ניתן להתחבר לשירות: ${lastApiError}`);
 }
 
 function sqm(r) {
