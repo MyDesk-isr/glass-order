@@ -35,7 +35,7 @@
     background:#fff; font-size:13px; font-weight:700; color:var(--ink); }
   .btn-sm.on { background:var(--ink); color:#fff; }
   .alert { margin-top:12px; padding:10px 14px; background:#fdf0ef; border:1px solid #e8b4ae;
-    border-radius:8px; font-size:14px; color:#8a2f25; }
+    border-radius:8px; font-size:14px; color:#8a2f25; word-break:break-word; }
   .paste-box { margin-top:12px; background:#fff; border:1.5px solid var(--ink); border-radius:10px; padding:14px; }
   .paste-box textarea { width:100%; border:1.5px solid var(--line); border-radius:8px; padding:10px;
     font-size:14px; font-family:monospace; outline:none; resize:vertical; direction:ltr; }
@@ -85,7 +85,7 @@
         <select class="form" id="glassType"></select>
       </div>
       <div class="full">
-        <label class="fld" for="apiKey">מפתח Google Gemini API (חינם, מוזן פעם אחת ונשמר בדפדפן שלך)</label>
+        <label class="fld" for="apiKey">מפתח Google Gemini API (חינם, מוזן פעם אחת ונשמר בדפדפן)</label>
         <input class="form" id="apiKey" type="password" placeholder="AIzaSy..." autocomplete="off" style="direction:ltr">
         <div class="hint">מפתח חינמי להוצאה תוך דקה ב-aistudio.google.com | בלי מפתח: הזנה ידנית והדבקת שורות עובדות כרגיל.</div>
       </div>
@@ -215,19 +215,24 @@ const PROMPT =
   '{"items":[{"facade":"3","label":"G7","qty":1,"width_cm":112.5,"height_cm":251.5}]} ' +
   'מידה לא ברורה = null.';
 
-// רשימת מודלים נתמכים לניסיון מדורג
-const API_MODELS = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-latest'];
+// ניסיון קריאה מדורג דרך מספר מסלולים מול גוגל
+const ATTEMPTS = [
+  { model: 'gemini-1.5-flash', ver: 'v1' },
+  { model: 'gemini-1.5-flash', ver: 'v1beta' },
+  { model: 'gemini-2.0-flash', ver: 'v1beta' },
+  { model: 'gemini-1.5-pro', ver: 'v1' }
+];
 
 async function analyze(file, onStatus) {
   const image = await compress(file);
-  const key = ($('apiKey').value || '').trim();
+  let key = ($('apiKey').value || '').trim().replace(/[\r\n\s]/g, '');
   if (!key) throw new Error('לניתוח אוטומטי יש להזין מפתח Google Gemini API בפרטי ההזמנה');
 
-  let lastErr = null;
+  let lastApiError = '';
 
-  for (const model of API_MODELS) {
-    if (onStatus) onStatus(`מנתח תמונה בעזרת ${model}…`);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  for (const att of ATTEMPTS) {
+    if (onStatus) onStatus(`מנתח תמונה בעזרת ${att.model}…`);
+    const url = `https://generativelanguage.googleapis.com/${att.ver}/models/${att.model}:generateContent?key=${encodeURIComponent(key)}`;
     
     try {
       const r = await fetch(url, {
@@ -246,8 +251,9 @@ async function analyze(file, onStatus) {
         }),
       });
 
+      const out = await r.json().catch(() => ({}));
+
       if (r.ok) {
-        const out = await r.json();
         const text = out.candidates?.[0]?.content?.parts?.[0]?.text;
         if (!text) throw new Error('לא התקבלה תשובה משירות הניתוח');
         
@@ -257,26 +263,33 @@ async function analyze(file, onStatus) {
         return parsed.items;
       }
 
+      // חילוץ תשובת השגיאה המפרטת של גוגל
+      const details = out.error?.message || `קוד ${r.status}`;
+      lastApiError = details;
+
       if (r.status === 404) {
-        // מודל זה אינו זמין בחשבון, ננסה את הבא ברשימה
-        lastErr = new Error('המודל לא נמצא (404)');
+        // המודל אינו זמין בנתיב זה עבור המפתח, נמשיך לניסיון הבא
         continue;
       }
 
-      if (r.status === 400 || r.status === 403) throw new Error('מפתח ה-API אינו תקין או שאין הרשאה מתאימה (שגיאה ' + r.status + ')');
-      if (r.status === 429) throw new Error('חרגת ממכסת הבקשות, נסה שוב עוד כמה שניות.');
-      throw new Error('שגיאה משירות הניתוח (' + r.status + ')');
+      if (r.status === 400 || r.status === 403) {
+        throw new Error(`שגיאת הרשאה מול גוגל (${r.status}): ${details}`);
+      }
+      if (r.status === 429) {
+        throw new Error('חרגת ממכסת הבקשות (429), נסה שוב עוד כדקה.');
+      }
+
+      throw new Error(`שגיאה משירות הניתוח: ${details}`);
 
     } catch (err) {
-      if (err.message.includes('404')) {
-        lastErr = err;
+      if (err.message.includes('404') || err.message.includes('not found')) {
         continue;
       }
       throw err;
     }
   }
 
-  throw lastErr || new Error('לא ניתן להתחבר למודלי Gemini. ודא שמפתח ה-API שהוזן תקין.');
+  throw new Error(`שגיאת 404 משרתי גוגל. תשובת השרת: "${lastApiError}". נא לוודא שהמפתח הונפק מ-aistudio.google.com בחשבון פרטי.`);
 }
 
 function sqm(r) {
