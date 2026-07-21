@@ -24,7 +24,8 @@
   input.form:focus, select.form:focus, textarea:focus { border-color:var(--ink); }
   .hint { font-size:12px; color:#8a8f96; margin-top:4px; }
   .drop { display:block; border:2px dashed var(--ink); border-radius:10px; padding:24px 16px;
-    text-align:center; cursor:pointer; background:#fff; }
+    text-align:center; cursor:pointer; background:#fff; transition: background 0.2s; }
+  .drop.dragover { background:#f0f4ff; }
   .drop.busy { border-color:var(--line); cursor:wait; }
   .drop .t1 { font-weight:700; font-size:17px; margin-top:8px; }
   .drop .t2 { font-size:13px; color:#6b6f76; margin-top:4px; }
@@ -230,7 +231,7 @@ async function analyze(file, onStatus) {
     body: JSON.stringify({
       contents: [{
         parts: [
-          { inline_data: { mime_type: 'image/jpeg', data: image } },
+          { inlineData: { mimeType: 'image/jpeg', data: image } },
           { text: PROMPT }
         ]
       }],
@@ -241,7 +242,9 @@ async function analyze(file, onStatus) {
   });
   
   if (!r.ok) {
-    if (r.status === 400 || r.status === 403) throw new Error('המפתח לא תקין — בדוק את מפתח Gemini API');
+    if (r.status === 404) throw new Error('שגיאה 404: מודל ה-API לא נמצא. ודא שמפתח ה-API תקין ונוצר ב-Google AI Studio.');
+    if (r.status === 400 || r.status === 403) throw new Error('מפתח ה-API אינו תקין או שאין הרשאה מתאימה (שגיאה ' + r.status + ')');
+    if (r.status === 429) throw new Error('חרגת ממכסת הבקשות, נסה שוב עוד כמה שניות.');
     throw new Error('שגיאה משירות הניתוח (' + r.status + ')');
   }
   
@@ -249,7 +252,8 @@ async function analyze(file, onStatus) {
   const text = out.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('לא התקבלה תשובה משירות הניתוח');
   
-  const parsed = JSON.parse(text.replace(/```json|```/g, '').trim());
+  const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const parsed = JSON.parse(cleanJson);
   if (!parsed || !Array.isArray(parsed.items)) throw new Error('המבנה שהוחזר אינו תקין');
   return parsed.items;
 }
@@ -315,8 +319,7 @@ function addRows(items) {
   render();
 }
 
-$('fileInput').addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files || []);
+async function handleFiles(files) {
   if (!files.length) return;
   $('dropZone').classList.add('busy');
   $('errorBox').style.display = 'none';
@@ -333,6 +336,19 @@ $('fileInput').addEventListener('change', async (e) => {
   $('dropZone').classList.remove('busy');
   $('dropTitle').textContent = 'צלם או העלה תוכנית עם מידות בכתב יד';
   $('fileInput').value = '';
+}
+
+$('fileInput').addEventListener('change', (e) => handleFiles(Array.from(e.target.files || [])));
+
+const dropZone = $('dropZone');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  if (e.dataTransfer.files && e.dataTransfer.files.length) {
+    handleFiles(Array.from(e.dataTransfer.files));
+  }
 });
 
 $('pasteToggle').addEventListener('click', () => {
